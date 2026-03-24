@@ -16,7 +16,7 @@ include(CMakePackageConfigHelpers)
 include(CheckIncludeFileCXX)
 
 option(BUILD_SAMPLE        "Build sample program" ON)
-option(WITH_OPENSSL        "Use OpenSSL for encryption" OFF)
+option(WITH_OPENSSL        "Use OpenSSL for encryption" ON)
 
 if(NOT WIN32)
     option(ENABLE_KRB5         "Enable Kerberos support" ON)
@@ -38,6 +38,7 @@ if(NOT WIN32)
 endif()
 
 if(WITH_OPENSSL)
+    set(OPENSSL_ROOT_DIR $ENV{ASV_PLAT_PORTS})
     find_package(OpenSSL REQUIRED)
 endif()
 
