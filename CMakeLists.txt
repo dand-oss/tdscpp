@@ -20,7 +20,10 @@ if(NOT WIN32)
     option(ENABLE_KRB5         "Enable Kerberos support" ON)
 endif()
 
-find_package(nlohmann_json REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+asv_print_package_properties(
+    nlohmann_json::nlohmann_json
+    )
 
 if(ENABLE_KRB5)
     find_package(PkgConfig REQUIRED)
