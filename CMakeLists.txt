@@ -105,10 +105,6 @@ target_include_directories(${libname}
 
 if(WIN32)
     add_definitions(-DNOMINMAX)
-    set_target_properties(${libname} PROPERTIES
-        PREFIX ""
-        WINDOWS_EXPORT_ALL_SYMBOLS ON
-    )
 endif()
 
 target_link_libraries(${libname} PUBLIC nlohmann_json::nlohmann_json)
