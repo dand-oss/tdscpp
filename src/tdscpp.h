@@ -37,26 +37,16 @@
 #endif
 
 #ifdef _WIN32
-
-#ifdef TDSCPP_EXPORT
-#define TDSCPP __declspec(dllexport)
-#elif !defined(TDSCPP_STATIC)
-#define TDSCPP __declspec(dllimport)
+    // cmake defines <libname>_EXPORTS building shared libraries
+    #ifdef tdscpp_EXPORTS
+        #define TDSCPP __declspec(dllexport)
+    #else
+        #define TDSCPP __declspec(dllimport)
+    #endif // tdscpp_EXPORTS
 #else
-#define TDSCPP
-#endif
-
-#else
-
-#ifdef TDSCPP_EXPORT
-#define TDSCPP __attribute__ ((visibility ("default")))
-#elif !defined(TDSCPP_STATIC)
-#define TDSCPP __attribute__ ((dllimport))
-#else
-#define TDSCPP
-#endif
-
-#endif
+    // Linux - gcc/clang
+    #define TDSCPP __attribute__((visibility("default")))
+#endif // WIN32
 
 #ifdef __GNUC__
 #define WARN_UNUSED __attribute__ ((warn_unused))
