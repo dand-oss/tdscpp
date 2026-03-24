@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.15)
 
 project(tdscpp VERSION 20250301)
 
+###############
+# ASI default settings
+list(APPEND CMAKE_MODULE_PATH "$ENV{ASV_CMAKE}")
+include(asv_cmake_defaults)
+asv_cmake_defaults( )
+###############
+
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(CheckIncludeFileCXX)
