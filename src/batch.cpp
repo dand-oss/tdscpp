@@ -17,6 +17,15 @@
 
 #include "tdscpp.h"
 #include "tdscpp-private.h"
+#include <cstring>
+
+// Safe unaligned read helpers
+template<typename T>
+static inline T read_unaligned(const void* ptr) {
+    T val;
+    memcpy(&val, ptr, sizeof(T));
+    return val;
+}
 
 using namespace std;
 
@@ -121,9 +130,10 @@ namespace tds {
                         case token::DONE:
                         case token::DONEINPROC:
                         case token::DONEPROC: {
-                            auto m = (tds_done_msg*)&t[1];
+                            tds_done_msg m;
+                            memcpy(&m, &t[1], sizeof(m));
 
-                            if (m->status & 0x20)
+                            if (m.status & 0x20)
                                 ack = true;
 
                             break;
@@ -196,7 +206,8 @@ namespace tds {
                 case token::DONEINPROC:
                 case token::DONEPROC:
                 {
-                    const auto& msg = *(tds_done_msg*)sp.data();
+                    tds_done_msg msg;
+                    memcpy(&msg, sp.data(), sizeof(msg));
 
                     if (msg.status & 0x20) // attention
                         received_attn = true;
@@ -214,7 +225,7 @@ namespace tds {
                     if (sp.size() < sizeof(uint16_t))
                         throw formatted_error("Short {} message ({} bytes, expected at least 2).", token_type, sp.size());
 
-                    auto len = *(uint16_t*)&sp[0];
+                    auto len = read_unaligned<uint16_t>(&sp[0]);
 
                     sp = sp.subspan(sizeof(uint16_t));
 
@@ -240,7 +251,7 @@ namespace tds {
                     if (sp.size() < 4)
                         throw formatted_error("Short COLMETADATA message ({} bytes, expected at least 4).", sp.size());
 
-                    auto num_columns = *(uint16_t*)&sp[0];
+                    auto num_columns = read_unaligned<uint16_t>(&sp[0]);
 
                     cols.clear();
                     cols.reserve(num_columns);
@@ -256,7 +267,8 @@ namespace tds {
                         if (sp2.size() < sizeof(tds_colmetadata_col))
                             throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least {}).", sp2.size(), sizeof(tds_colmetadata_col));
 
-                        auto& c = *(tds_colmetadata_col*)&sp2[0];
+                        tds_colmetadata_col c;
+                        memcpy(&c, &sp2[0], sizeof(c));
 
                         sp2 = sp2.subspan(sizeof(tds_colmetadata_col));
 
@@ -307,9 +319,9 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint16_t) + sizeof(collation))
                                     throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least {}).", sp2.size(), sizeof(uint16_t) + sizeof(collation));
 
-                                col.max_length = *(uint16_t*)sp2.data();
+                                col.max_length = read_unaligned<uint16_t>(sp2.data());
 
-                                col.coll = *(collation*)(sp2.data() + sizeof(uint16_t));
+                                memcpy(&col.coll, sp2.data() + sizeof(uint16_t), sizeof(collation));
 
                                 sp2 = sp2.subspan(sizeof(uint16_t) + sizeof(collation));
                                 break;
@@ -320,7 +332,7 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint16_t))
                                     throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least {}).", sp2.size(), sizeof(uint16_t));
 
-                                col.max_length = *(uint16_t*)sp2.data();
+                                col.max_length = read_unaligned<uint16_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint16_t));
                                 break;
@@ -349,7 +361,7 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint32_t))
                                     throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least 4).", sp2.size());
 
-                                col.max_length = *(uint32_t*)sp2.data();
+                                col.max_length = read_unaligned<uint32_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint32_t));
                                 break;
@@ -361,7 +373,7 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint32_t))
                                     throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least 4).", sp2.size());
 
-                                col.max_length = *(uint32_t*)sp2.data();
+                                col.max_length = read_unaligned<uint32_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint32_t));
 
@@ -383,7 +395,7 @@ namespace tds {
                                     if (sp2.size() < sizeof(uint16_t))
                                         return;
 
-                                    auto partlen = *(uint16_t*)sp2.data();
+                                    auto partlen = read_unaligned<uint16_t>(sp2.data());
 
                                     sp2 = sp2.subspan(sizeof(uint16_t));
 
@@ -401,7 +413,7 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint16_t))
                                     throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least 2).", sp2.size());
 
-                                col.max_length = *(uint16_t*)sp2.data();
+                                col.max_length = read_unaligned<uint16_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint16_t));
 
@@ -452,14 +464,15 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint16_t))
                                     throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least 2).", sp2.size());
 
-                                auto string_len2 = *(uint16_t*)sp2.data();
+                                auto string_len2 = read_unaligned<uint16_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint16_t));
 
                                 if (sp2.size() < string_len2 * sizeof(char16_t))
                                     throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least {}).", sp2.size(), string_len2 * sizeof(char16_t));
 
-                                col.clr_name.assign((uint16_t*)sp2.data(), (uint16_t*)sp2.data() + string_len2);
+                                col.clr_name.resize(string_len2);
+                                memcpy(col.clr_name.data(), sp2.data(), string_len2 * sizeof(uint16_t));
 
                                 sp2 = sp2.subspan(string_len2 * sizeof(char16_t));
 
@@ -480,7 +493,11 @@ namespace tds {
                         if (sp2.size() < name_len * sizeof(char16_t))
                             throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least {}).", sp2.size(), name_len * sizeof(char16_t));
 
-                        col.name = u16string_view((char16_t*)sp2.data(), name_len);
+                        {
+                            u16string aligned_name(name_len, u'\0');
+                            memcpy(aligned_name.data(), sp2.data(), name_len * sizeof(char16_t));
+                            col.name = std::move(aligned_name);
+                        }
 
                         sp2 = sp2.subspan(name_len * sizeof(char16_t));
                     }
@@ -513,7 +530,7 @@ namespace tds {
                     if (sp.size() < sizeof(uint16_t))
                         throw formatted_error("Short ORDER message ({} bytes, expected at least {}).", sp.size(), sizeof(uint16_t));
 
-                    auto len = *(uint16_t*)sp.data();
+                    auto len = read_unaligned<uint16_t>(sp.data());
                     sp = sp.subspan(sizeof(uint16_t));
 
                     if (sp.size() < len)
