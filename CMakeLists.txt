@@ -9,12 +9,6 @@ set(libname "tdscpp")
 list(APPEND CMAKE_MODULE_PATH "$ENV{ASV_CMAKE}")
 include(asv_cmake_defaults)
 asv_cmake_defaults()
-
-# tdscpp has pervasive unaligned memory access in TDS packet parsing
-# (char16_t column names at odd offsets, packed struct casts).
-# Disable UBSAN to avoid false positives corrupting runtime behavior.
-string(REPLACE "-fsanitize=undefined" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-string(REPLACE "-fsanitize-recover=all" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
 ###############
 
 include(GNUInstallDirs)
