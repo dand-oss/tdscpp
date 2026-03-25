@@ -130,9 +130,10 @@ namespace tds {
                         case token::DONE:
                         case token::DONEINPROC:
                         case token::DONEPROC: {
-                            auto m = (tds_done_msg*)&t[1];
+                            tds_done_msg m;
+                            memcpy(&m, &t[1], sizeof(m));
 
-                            if (m->status & 0x20)
+                            if (m.status & 0x20)
                                 ack = true;
 
                             break;
@@ -205,7 +206,8 @@ namespace tds {
                 case token::DONEINPROC:
                 case token::DONEPROC:
                 {
-                    const auto& msg = *(tds_done_msg*)sp.data();
+                    tds_done_msg msg;
+                    memcpy(&msg, sp.data(), sizeof(msg));
 
                     if (msg.status & 0x20) // attention
                         received_attn = true;
@@ -265,7 +267,8 @@ namespace tds {
                         if (sp2.size() < sizeof(tds_colmetadata_col))
                             throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least {}).", sp2.size(), sizeof(tds_colmetadata_col));
 
-                        auto& c = *(tds_colmetadata_col*)&sp2[0];
+                        tds_colmetadata_col c;
+                        memcpy(&c, &sp2[0], sizeof(c));
 
                         sp2 = sp2.subspan(sizeof(tds_colmetadata_col));
 
@@ -318,7 +321,7 @@ namespace tds {
 
                                 col.max_length = read_unaligned<uint16_t>(sp2.data());
 
-                                col.coll = *(collation*)(sp2.data() + sizeof(uint16_t));
+                                memcpy(&col.coll, sp2.data() + sizeof(uint16_t), sizeof(collation));
 
                                 sp2 = sp2.subspan(sizeof(uint16_t) + sizeof(collation));
                                 break;
@@ -468,7 +471,8 @@ namespace tds {
                                 if (sp2.size() < string_len2 * sizeof(char16_t))
                                     throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least {}).", sp2.size(), string_len2 * sizeof(char16_t));
 
-                                col.clr_name.assign((uint16_t*)sp2.data(), (uint16_t*)sp2.data() + string_len2);
+                                col.clr_name.resize(string_len2);
+                                memcpy(col.clr_name.data(), sp2.data(), string_len2 * sizeof(uint16_t));
 
                                 sp2 = sp2.subspan(string_len2 * sizeof(char16_t));
 
@@ -489,7 +493,11 @@ namespace tds {
                         if (sp2.size() < name_len * sizeof(char16_t))
                             throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least {}).", sp2.size(), name_len * sizeof(char16_t));
 
-                        col.name = u16string_view((char16_t*)sp2.data(), name_len);
+                        {
+                            u16string aligned_name(name_len, u'\0');
+                            memcpy(aligned_name.data(), sp2.data(), name_len * sizeof(char16_t));
+                            col.name = std::move(aligned_name);
+                        }
 
                         sp2 = sp2.subspan(name_len * sizeof(char16_t));
                     }

@@ -355,7 +355,8 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
 
                     auto& col = cols.back();
 
-                    auto& c = *(tds::tds_colmetadata_col*)&sp2[0];
+                    tds::tds_colmetadata_col c;
+                    memcpy(&c, &sp2[0], sizeof(c));
 
                     col.type = c.type;
 
@@ -2406,7 +2407,7 @@ static void handle_loginack_msg(span<const uint8_t> sp) {
     uint8_t interf;
     uint32_t server_version;
 #endif
-    u16string_view server_name;
+    u16string server_name;
 
     if (sp.size() < 10)
         throw runtime_error("Short LOGINACK message.");
@@ -2420,7 +2421,8 @@ static void handle_loginack_msg(span<const uint8_t> sp) {
     interf = sp[0];
 #endif
     tds_version = read_unaligned<uint32_t>(&sp[1]);
-    server_name = u16string_view((char16_t*)&sp[6], server_name_len);
+    server_name.resize(server_name_len);
+    memcpy(server_name.data(), &sp[6], server_name_len * sizeof(char16_t));
 #ifdef DEBUG_SHOW_MSGS
     server_version = read_unaligned<uint32_t>(&sp[6 + (server_name_len * sizeof(char16_t))]);
 #endif
@@ -3225,7 +3227,8 @@ namespace tds {
     }
 
     void smp_session::parse_message(stop_token stop, span<const uint8_t> msg) {
-        auto& s = *(smp_header*)msg.data();
+        smp_header s;
+        memcpy(&s, msg.data(), sizeof(s));
 
         // FIXME - honour server-side rate limiting
 
@@ -3243,7 +3246,8 @@ namespace tds {
                 if (msg.size() < sizeof(smp_header) + sizeof(tds_header))
                     throw formatted_error("SMP DATA message was {} bytes, expected at least {}.", msg.size(), sizeof(smp_header) + sizeof(tds_header));
 
-                auto& h = *(tds_header*)(msg.data() + sizeof(smp_header));
+                tds_header h;
+                memcpy(&h, msg.data() + sizeof(smp_header), sizeof(h));
 
                 auto len = htons(h.length);
 
@@ -3860,7 +3864,8 @@ namespace tds {
         if (sp.size() < sizeof(tds_info_msg))
             throw formatted_error("Short INFO message ({} bytes, expected at least 6).", sp.size());
 
-        auto tim = (tds_info_msg*)sp.data();
+        tds_info_msg tim;
+        memcpy(&tim, sp.data(), sizeof(tim));
 
         sp = sp.subspan(sizeof(tds_info_msg));
 
@@ -3875,7 +3880,8 @@ namespace tds {
                                   sp.size(), msg_len * sizeof(char16_t));
         }
 
-        auto msg = u16string_view((char16_t*)sp.data(), msg_len);
+        u16string msg_str(msg_len, u'\0');
+        memcpy(msg_str.data(), sp.data(), msg_len * sizeof(char16_t));
         sp = sp.subspan(msg_len * sizeof(char16_t));
 
         if (sp.size() < sizeof(uint8_t))
@@ -3889,7 +3895,8 @@ namespace tds {
                                   sp.size(), server_name_len * sizeof(char16_t));
         }
 
-        auto server_name = u16string_view((char16_t*)sp.data(), server_name_len);
+        u16string server_name_str(server_name_len, u'\0');
+        memcpy(server_name_str.data(), sp.data(), server_name_len * sizeof(char16_t));
         sp = sp.subspan(server_name_len * sizeof(char16_t));
 
         if (sp.size() < sizeof(uint8_t))
@@ -3903,7 +3910,8 @@ namespace tds {
                                   sp.size(), proc_name_len * sizeof(char16_t));
         }
 
-        auto proc_name = u16string_view((char16_t*)sp.data(), proc_name_len);
+        u16string proc_name_str(proc_name_len, u'\0');
+        memcpy(proc_name_str.data(), sp.data(), proc_name_len * sizeof(char16_t));
         sp = sp.subspan(proc_name_len * sizeof(char16_t));
 
         if (sp.size() < sizeof(int32_t))
@@ -3911,8 +3919,8 @@ namespace tds {
 
         auto line_number = read_unaligned<int32_t>(sp.data());
 
-        message_handler(utf16_to_utf8(server_name), utf16_to_utf8(msg), utf16_to_utf8(proc_name), tim->msgno, line_number,
-                        tim->state, tim->severity, error);
+        message_handler(utf16_to_utf8(server_name_str), utf16_to_utf8(msg_str), utf16_to_utf8(proc_name_str), tim.msgno, line_number,
+                        tim.state, tim.severity, error);
     }
 
     static u16string to_u16string(uint64_t num) {
@@ -4318,23 +4326,33 @@ WHERE columns.object_id = OBJECT_ID(?))"), fullname.empty() ? table : fullname);
     map<u16string, col_info> TDSCPP get_col_info(session& n, u16string_view table, u16string_view db);
 
     void tds_impl::handle_envchange_msg(span<const uint8_t> sp) {
-        auto ec = (tds_envchange*)(sp.data() - offsetof(tds_envchange, type));
+        // ec_base points to the start of the tds_envchange structure in the packet buffer.
+        // sp starts at the 'type' field, so back up by the offset of 'type' within tds_envchange.
+        auto ec_base = sp.data() - offsetof(tds_envchange, type);
 
-        switch (ec->type) {
+        tds_envchange ec;
+        memcpy(&ec, ec_base, sizeof(ec));
+
+        switch (ec.type) {
             case tds_envchange_type::database: {
                 if (sp.size() < sizeof(tds_envchange_database) - offsetof(tds_envchange_database, header.type)) {
                     throw formatted_error("Short ENVCHANGE message ({} bytes, expected at least {}).", sp.size(),
                                           sizeof(tds_envchange_database) - offsetof(tds_envchange_database, header.type));
                 }
 
-                auto tedb = (tds_envchange_database*)ec;
+                tds_envchange_database tedb;
+                memcpy(&tedb, ec_base, sizeof(tedb));
 
-                if (tedb->header.length < sizeof(tds_envchange_database) + (tedb->name_len * sizeof(char16_t))) {
+                if (tedb.header.length < sizeof(tds_envchange_database) + (tedb.name_len * sizeof(char16_t))) {
                     throw formatted_error("Short ENVCHANGE message ({} bytes, expected at least {}).",
-                                          tedb->header.length, sizeof(tds_envchange_database) + (tedb->name_len * sizeof(char16_t)));
+                                          tedb.header.length, sizeof(tds_envchange_database) + (tedb.name_len * sizeof(char16_t)));
                 }
 
-                db_name = u16string_view{(char16_t*)&tedb[1], tedb->name_len};
+                {
+                    u16string aligned_db(tedb.name_len, u'\0');
+                    memcpy(aligned_db.data(), ec_base + sizeof(tds_envchange_database), tedb.name_len * sizeof(char16_t));
+                    db_name = std::move(aligned_db);
+                }
 
                 break;
             }
@@ -4343,15 +4361,16 @@ WHERE columns.object_id = OBJECT_ID(?))"), fullname.empty() ? table : fullname);
                 if (sp.size() < sizeof(tds_envchange_begin_trans) - offsetof(tds_envchange_begin_trans, header.type))
                     throw formatted_error("Short ENVCHANGE message ({} bytes, expected 11).", sp.size());
 
-                auto tebt = (tds_envchange_begin_trans*)ec;
+                tds_envchange_begin_trans tebt;
+                memcpy(&tebt, ec_base, sizeof(tebt));
 
-                if (tebt->header.length < offsetof(tds_envchange_begin_trans, new_len))
-                    throw formatted_error("Short ENVCHANGE message ({} bytes, expected 11).", tebt->header.length);
+                if (tebt.header.length < offsetof(tds_envchange_begin_trans, new_len))
+                    throw formatted_error("Short ENVCHANGE message ({} bytes, expected 11).", tebt.header.length);
 
-                if (tebt->new_len != 8)
-                    throw formatted_error("Unexpected transaction ID length ({} bytes, expected 8).", tebt->new_len);
+                if (tebt.new_len != 8)
+                    throw formatted_error("Unexpected transaction ID length ({} bytes, expected 8).", tebt.new_len);
 
-                trans_id = tebt->trans_id;
+                trans_id = tebt.trans_id;
 
                 break;
             }
@@ -4360,10 +4379,11 @@ WHERE columns.object_id = OBJECT_ID(?))"), fullname.empty() ? table : fullname);
                 if (sp.size() < sizeof(tds_envchange_rollback_trans) - offsetof(tds_envchange_rollback_trans, header.type))
                     throw formatted_error("Short ENVCHANGE message ({} bytes, expected 11).", sp.size());
 
-                auto tert = (tds_envchange_rollback_trans*)ec;
+                tds_envchange_rollback_trans tert;
+                memcpy(&tert, ec_base, sizeof(tert));
 
-                if (tert->header.length < offsetof(tds_envchange_rollback_trans, new_len))
-                    throw formatted_error("Short ENVCHANGE message ({} bytes, expected 11).", tert->header.length);
+                if (tert.header.length < offsetof(tds_envchange_rollback_trans, new_len))
+                    throw formatted_error("Short ENVCHANGE message ({} bytes, expected 11).", tert.header.length);
 
                 trans_id = 0;
 
@@ -4374,10 +4394,11 @@ WHERE columns.object_id = OBJECT_ID(?))"), fullname.empty() ? table : fullname);
                 if (sp.size() < sizeof(tds_envchange_commit_trans) - offsetof(tds_envchange_begin_trans, header.type))
                     throw formatted_error("Short ENVCHANGE message ({} bytes, expected 11).", sp.size());
 
-                auto tect = (tds_envchange_commit_trans*)ec;
+                tds_envchange_commit_trans tect;
+                memcpy(&tect, ec_base, sizeof(tect));
 
-                if (tect->header.length < offsetof(tds_envchange_begin_trans, new_len))
-                    throw formatted_error("Short ENVCHANGE message ({} bytes, expected 11).", tect->header.length);
+                if (tect.header.length < offsetof(tds_envchange_begin_trans, new_len))
+                    throw formatted_error("Short ENVCHANGE message ({} bytes, expected 11).", tect.header.length);
 
                 trans_id = 0;
 
@@ -4390,14 +4411,16 @@ WHERE columns.object_id = OBJECT_ID(?))"), fullname.empty() ? table : fullname);
                                           sizeof(tds_envchange_packet_size) - offsetof(tds_envchange_packet_size, header.type));
                 }
 
-                auto teps = (tds_envchange_packet_size*)ec;
+                tds_envchange_packet_size teps;
+                memcpy(&teps, ec_base, sizeof(teps));
 
-                if (teps->header.length < sizeof(tds_envchange_packet_size) + (teps->new_len * sizeof(char16_t))) {
+                if (teps.header.length < sizeof(tds_envchange_packet_size) + (teps.new_len * sizeof(char16_t))) {
                     throw formatted_error("Short ENVCHANGE message ({} bytes, expected at least {}).",
-                                          teps->header.length, sizeof(tds_envchange_packet_size) + (teps->new_len * sizeof(char16_t)));
+                                          teps.header.length, sizeof(tds_envchange_packet_size) + (teps.new_len * sizeof(char16_t)));
                 }
 
-                u16string_view s((char16_t*)&teps[1], teps->new_len);
+                u16string s(teps.new_len, u'\0');
+                memcpy(s.data(), ec_base + sizeof(tds_envchange_packet_size), teps.new_len * sizeof(char16_t));
                 uint32_t v = 0;
 
                 for (auto c : s) {
@@ -4419,7 +4442,8 @@ WHERE columns.object_id = OBJECT_ID(?))"), fullname.empty() ? table : fullname);
                                           sizeof(tds_envchange_collation) - offsetof(tds_envchange_collation, header.type));
                 }
 
-                const auto& tec = *(tds_envchange_collation*)ec;
+                tds_envchange_collation tec;
+                memcpy(&tec, ec_base, sizeof(tec));
 
                 if (tec.new_len >= sizeof(collation))
                     coll = tec.collation;
