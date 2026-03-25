@@ -17,6 +17,20 @@
 
 #include "tdscpp.h"
 #include "tdscpp-private.h"
+#include <cstring>
+
+// Safe unaligned read/write helpers
+template<typename T>
+static inline T read_unaligned(const void* ptr) {
+    T val;
+    memcpy(&val, ptr, sizeof(T));
+    return val;
+}
+
+template<typename T>
+static inline void write_unaligned(void* ptr, T val) {
+    memcpy(ptr, &val, sizeof(T));
+}
 
 using namespace std;
 
@@ -179,13 +193,13 @@ namespace tds {
 
         auto ptr = (uint8_t*)&all_headers[1];
 
-        *(uint16_t*)ptr = (uint16_t)name.length();
+        write_unaligned<uint16_t>(ptr, (uint16_t)name.length());
         ptr += sizeof(uint16_t);
 
         memcpy(ptr, name.data(), name.length() * sizeof(char16_t));
         ptr += name.length() * sizeof(char16_t);
 
-        *(uint16_t*)ptr = 0; // flags
+        write_unaligned<uint16_t>(ptr, (uint16_t)0); // flags
         ptr += sizeof(uint16_t);
 
         for (const auto& p : params) {
@@ -306,7 +320,7 @@ namespace tds {
                         memcpy(ptr, p.val.data(), p.val.size());
                         ptr += p.val.size();
 
-                        *(uint32_t*)ptr = 0; // last chunk
+                        write_unaligned<uint32_t>(ptr, (uint32_t)0); // last chunk
                         ptr += sizeof(uint32_t);
                     } else {
                         h2->length = (uint16_t)(p.is_null ? 0xffff : p.val.size());
@@ -353,7 +367,7 @@ namespace tds {
                         memcpy(ptr, sv.data(), sv.length());
                         ptr += sv.length();
 
-                        *(uint32_t*)ptr = 0; // last chunk
+                        write_unaligned<uint32_t>(ptr, (uint32_t)0); // last chunk
                         ptr += sizeof(uint32_t);
                     } else {
                         h2->length = (uint16_t)(p.is_null ? 0xffff : sv.length());
@@ -389,7 +403,7 @@ namespace tds {
                         memcpy(ptr, p.val.data(), p.val.size());
                         ptr += p.val.size();
 
-                        *(uint32_t*)ptr = 0; // last chunk
+                        write_unaligned<uint32_t>(ptr, (uint32_t)0); // last chunk
                         ptr += sizeof(uint32_t);
                     } else {
                         h2->length = (uint16_t)(p.is_null ? 0xffff : p.val.size());
@@ -420,7 +434,7 @@ namespace tds {
                         memcpy(ptr, p.val.data(), p.val.size());
                         ptr += p.val.size();
 
-                        *(uint32_t*)ptr = 0; // last chunk
+                        write_unaligned<uint32_t>(ptr, (uint32_t)0); // last chunk
                         ptr += sizeof(uint32_t);
                     }
 
@@ -446,14 +460,14 @@ namespace tds {
                 break;
 
                 case sql_type::IMAGE:
-                    *(uint32_t*)ptr = 0x7fffffff;
+                    write_unaligned<uint32_t>(ptr, (uint32_t)0x7fffffff);
                     ptr += sizeof(uint32_t);
 
                     if (p.is_null) {
-                        *(uint32_t*)ptr = 0xffffffff;
+                        write_unaligned<uint32_t>(ptr, (uint32_t)0xffffffff);
                         ptr += sizeof(uint32_t);
                     } else {
-                        *(uint32_t*)ptr = (uint32_t)p.val.size();
+                        write_unaligned<uint32_t>(ptr, (uint32_t)p.val.size());
                         ptr += sizeof(uint32_t);
 
                         memcpy(ptr, p.val.data(), p.val.size());
@@ -464,7 +478,7 @@ namespace tds {
                 case sql_type::TEXT:
                 case sql_type::NTEXT:
                 {
-                    *(uint32_t*)ptr = 0x7fffffff;
+                    write_unaligned<uint32_t>(ptr, (uint32_t)0x7fffffff);
                     ptr += sizeof(uint32_t);
 
                     auto& col = *(collation*)ptr;
@@ -474,10 +488,10 @@ namespace tds {
                     ptr += sizeof(collation);
 
                     if (p.is_null) {
-                        *(uint32_t*)ptr = 0xffffffff;
+                        write_unaligned<uint32_t>(ptr, (uint32_t)0xffffffff);
                         ptr += sizeof(uint32_t);
                     } else {
-                        *(uint32_t*)ptr = (uint32_t)p.val.size();
+                        write_unaligned<uint32_t>(ptr, (uint32_t)p.val.size());
                         ptr += sizeof(uint32_t);
 
                         memcpy(ptr, p.val.data(), p.val.size());
@@ -509,18 +523,18 @@ namespace tds {
                         ptr += sizeof(type) - sizeof(char16_t);
 
                         if (p.is_null) {
-                            *(uint64_t*)ptr = 0xffffffffffffffff;
+                            write_unaligned<uint64_t>(ptr, (uint64_t)0xffffffffffffffff);
                             ptr += sizeof(uint64_t);
                         } else {
-                            *(uint64_t*)ptr = p.val.size();
+                            write_unaligned<uint64_t>(ptr, (uint64_t)p.val.size());
                             ptr += sizeof(uint64_t);
-                            *(uint32_t*)ptr = (uint32_t)p.val.size();
+                            write_unaligned<uint32_t>(ptr, (uint32_t)p.val.size());
                             ptr += sizeof(uint32_t);
 
                             memcpy(ptr, p.val.data(), p.val.size());
                             ptr += p.val.size();
 
-                            *(uint32_t*)ptr = 0;
+                            write_unaligned<uint32_t>(ptr, (uint32_t)0);
                             ptr += sizeof(uint32_t);
                         }
                     } else
@@ -696,7 +710,7 @@ namespace tds {
                     if (sp.size() < sizeof(uint16_t))
                         throw formatted_error("Short {} message ({} bytes, expected at least 2).", token_type, sp.size());
 
-                    auto len = *(uint16_t*)&sp[0];
+                    auto len = read_unaligned<uint16_t>(&sp[0]);
 
                     sp = sp.subspan(sizeof(uint16_t));
 
@@ -722,7 +736,7 @@ namespace tds {
                     if (sp.size() < sizeof(int32_t))
                         throw formatted_error("Short RETURNSTATUS message ({} bytes, expected 4).", sp.size());
 
-                    return_status = *(int32_t*)&sp[0];
+                    return_status = read_unaligned<int32_t>(&sp[0]);
 
                     break;
                 }
@@ -732,7 +746,7 @@ namespace tds {
                     if (sp.size() < 4)
                         throw formatted_error("Short COLMETADATA message ({} bytes, expected at least 4).", sp.size());
 
-                    auto num_columns = *(uint16_t*)&sp[0];
+                    auto num_columns = read_unaligned<uint16_t>(&sp[0]);
 
                     if (num_columns == 0)
                         break;
@@ -801,7 +815,7 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint16_t) + sizeof(collation))
                                     throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least {}).", sp2.size(), sizeof(uint16_t) + sizeof(collation));
 
-                                col.max_length = *(uint16_t*)sp2.data();
+                                col.max_length = read_unaligned<uint16_t>(sp2.data());
 
                                 col.coll = *(collation*)(sp2.data() + sizeof(uint16_t));
 
@@ -814,7 +828,7 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint16_t))
                                     throw formatted_error("Short COLMETADATA message ({} bytes left, expected at least {}).", sp2.size(), sizeof(uint16_t));
 
-                                col.max_length = *(uint16_t*)sp2.data();
+                                col.max_length = read_unaligned<uint16_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint16_t));
                                 break;
@@ -843,7 +857,7 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint32_t))
                                     return;
 
-                                col.max_length = *(uint32_t*)sp2.data();
+                                col.max_length = read_unaligned<uint32_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint32_t));
                                 break;
@@ -855,7 +869,7 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint32_t))
                                     return;
 
-                                col.max_length = *(uint32_t*)sp2.data();
+                                col.max_length = read_unaligned<uint32_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint32_t));
 
@@ -877,7 +891,7 @@ namespace tds {
                                     if (sp2.size() < sizeof(uint16_t))
                                         return;
 
-                                    auto partlen = *(uint16_t*)sp2.data();
+                                    auto partlen = read_unaligned<uint16_t>(sp2.data());
 
                                     sp2 = sp2.subspan(sizeof(uint16_t));
 
@@ -895,7 +909,7 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint16_t))
                                     return;
 
-                                col.max_length = *(uint16_t*)sp2.data();
+                                col.max_length = read_unaligned<uint16_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint16_t));
 
@@ -946,7 +960,7 @@ namespace tds {
                                 if (sp2.size() < sizeof(uint16_t))
                                     return;
 
-                                auto string_len2 = *(uint16_t*)sp2.data();
+                                auto string_len2 = read_unaligned<uint16_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint16_t));
 
@@ -1048,7 +1062,7 @@ namespace tds {
                     if (sp.size() < sizeof(uint16_t))
                         throw formatted_error("Short ORDER message ({} bytes, expected at least {}).", sp.size(), sizeof(uint16_t));
 
-                    auto len = *(uint16_t*)sp.data();
+                    auto len = read_unaligned<uint16_t>(sp.data());
                     sp = sp.subspan(sizeof(uint16_t));
 
                     if (sp.size() < len)

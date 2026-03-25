@@ -23,6 +23,20 @@
 #include "tdscpp-private.h"
 #include "config.h"
 #include "ringbuf.h"
+#include <cstring>
+
+// Safe unaligned read/write helpers
+template<typename T>
+static inline T read_unaligned(const void* ptr) {
+    T val;
+    memcpy(&val, ptr, sizeof(T));
+    return val;
+}
+
+template<typename T>
+static inline void write_unaligned(void* ptr, T val) {
+    memcpy(ptr, &val, sizeof(T));
+}
 #include <iostream>
 #include <string>
 #include <list>
@@ -150,7 +164,7 @@ static bool parse_row_col(enum tds::sql_type type, unsigned int max_length, span
                 if (sp.size() < sizeof(uint64_t))
                     return false;
 
-                auto len = *(uint64_t*)sp.data();
+                auto len = read_unaligned<uint64_t>(sp.data());
 
                 sp = sp.subspan(sizeof(uint64_t));
 
@@ -167,7 +181,7 @@ static bool parse_row_col(enum tds::sql_type type, unsigned int max_length, span
                         return false;
                     }
 
-                    auto chunk_len = *(uint32_t*)sp.data();
+                    auto chunk_len = read_unaligned<uint32_t>(sp.data());
 
                     sp = sp.subspan(sizeof(uint32_t));
 
@@ -188,7 +202,7 @@ static bool parse_row_col(enum tds::sql_type type, unsigned int max_length, span
                 if (sp.size() < sizeof(uint16_t))
                     return false;
 
-                auto len = *(uint16_t*)sp.data();
+                auto len = read_unaligned<uint16_t>(sp.data());
 
                 sp = sp.subspan(sizeof(uint16_t));
 
@@ -208,7 +222,7 @@ static bool parse_row_col(enum tds::sql_type type, unsigned int max_length, span
             if (sp.size() < sizeof(uint32_t))
                 return false;
 
-            auto len = *(uint32_t*)sp.data();
+            auto len = read_unaligned<uint32_t>(sp.data());
 
             sp = sp.subspan(sizeof(uint32_t));
 
@@ -254,7 +268,7 @@ static bool parse_row_col(enum tds::sql_type type, unsigned int max_length, span
                 if (sp.size() < sizeof(uint32_t))
                     return false;
 
-                auto len = *(uint32_t*)sp.data();
+                auto len = read_unaligned<uint32_t>(sp.data());
 
                 sp = sp.subspan(sizeof(uint32_t));
 
@@ -293,7 +307,7 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
                 if (sp.size() < 1 + sizeof(uint16_t))
                     return sp;
 
-                auto len = *(uint16_t*)&sp[1];
+                auto len = read_unaligned<uint16_t>(&sp[1]);
 
                 if (sp.size() < (size_t)(1 + sizeof(uint16_t) + len))
                     return sp;
@@ -318,7 +332,7 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
                 if (sp.size() < 5)
                     return sp;
 
-                auto num_columns = *(uint16_t*)&sp[1];
+                auto num_columns = read_unaligned<uint16_t>(&sp[1]);
 
                 if (num_columns == 0) {
                     buf_columns.clear();
@@ -388,7 +402,7 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
                             if (sp2.size() < sizeof(uint16_t) + sizeof(tds::collation))
                                 return sp;
 
-                            col.max_length = *(uint16_t*)sp2.data();
+                            col.max_length = read_unaligned<uint16_t>(sp2.data());
 
                             sp2 = sp2.subspan(sizeof(uint16_t) + sizeof(tds::collation));
                         break;
@@ -398,7 +412,7 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
                             if (sp2.size() < sizeof(uint16_t))
                                 return sp;
 
-                            col.max_length = *(uint16_t*)sp2.data();
+                            col.max_length = read_unaligned<uint16_t>(sp2.data());
 
                             sp2 = sp2.subspan(sizeof(uint16_t));
                         break;
@@ -429,7 +443,7 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
                             if (sp2.size() < sizeof(uint32_t))
                                 return sp;
 
-                            col.max_length = *(uint32_t*)sp2.data();
+                            col.max_length = read_unaligned<uint32_t>(sp2.data());
 
                             sp2 = sp2.subspan(sizeof(uint32_t));
                         break;
@@ -441,7 +455,7 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
                             if (sp2.size() < sizeof(uint32_t))
                                 return sp;
 
-                            col.max_length = *(uint32_t*)sp2.data();
+                            col.max_length = read_unaligned<uint32_t>(sp2.data());
 
                             sp2 = sp2.subspan(sizeof(uint32_t));
 
@@ -463,7 +477,7 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
                                 if (sp2.size() < sizeof(uint16_t))
                                     return sp;
 
-                                auto partlen = *(uint16_t*)sp2.data();
+                                auto partlen = read_unaligned<uint16_t>(sp2.data());
 
                                 sp2 = sp2.subspan(sizeof(uint16_t));
 
@@ -481,7 +495,7 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
                             if (sp2.size() < sizeof(uint16_t))
                                 return sp;
 
-                            col.max_length = *(uint16_t*)sp2.data();
+                            col.max_length = read_unaligned<uint16_t>(sp2.data());
 
                             sp2 = sp2.subspan(sizeof(uint16_t));
 
@@ -523,7 +537,7 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
 
                             // assembly qualified name
 
-                            auto string_len2 = *(uint16_t*)sp2.data();
+                            auto string_len2 = read_unaligned<uint16_t>(sp2.data());
 
                             sp2 = sp2.subspan(sizeof(uint16_t));
 
@@ -673,7 +687,7 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
                     if (sp2.size() < 1 + sizeof(uint32_t))
                         return sp;
 
-                    auto len = *(uint32_t*)&sp2[1];
+                    auto len = read_unaligned<uint32_t>(&sp2[1]);
 
                     sp2 = sp2.subspan(1 + sizeof(uint32_t));
 
@@ -797,7 +811,7 @@ void handle_row_col(tds::value_data_t& val, bool& is_null, enum tds::sql_type ty
                 if (sp.size() < sizeof(uint64_t))
                     throw formatted_error("Short ROW message ({} bytes left, expected at least 8).", sp.size());
 
-                auto len = *(uint64_t*)sp.data();
+                auto len = read_unaligned<uint64_t>(sp.data());
 
                 sp = sp.subspan(sizeof(uint64_t));
 
@@ -819,7 +833,7 @@ void handle_row_col(tds::value_data_t& val, bool& is_null, enum tds::sql_type ty
                     if (sp.size() < sizeof(uint32_t))
                         throw formatted_error("Short ROW message ({} bytes left, expected at least 4).", sp.size());
 
-                    auto chunk_len = *(uint32_t*)sp.data();
+                    auto chunk_len = read_unaligned<uint32_t>(sp.data());
 
                     sp = sp.subspan(sizeof(uint32_t));
 
@@ -837,7 +851,7 @@ void handle_row_col(tds::value_data_t& val, bool& is_null, enum tds::sql_type ty
                 if (sp.size() < sizeof(uint16_t))
                     throw formatted_error("Short ROW message ({} bytes left, expected at least 2).", sp.size());
 
-                auto len = *(uint16_t*)sp.data();
+                auto len = read_unaligned<uint16_t>(sp.data());
 
                 sp = sp.subspan(sizeof(uint16_t));
 
@@ -863,7 +877,7 @@ void handle_row_col(tds::value_data_t& val, bool& is_null, enum tds::sql_type ty
             if (sp.size() < sizeof(uint32_t))
                 throw formatted_error("Short ROW message ({} bytes left, expected at least 4).", sp.size());
 
-            auto len = *(uint32_t*)sp.data();
+            auto len = read_unaligned<uint32_t>(sp.data());
 
             sp = sp.subspan(sizeof(uint32_t));
 
@@ -914,7 +928,7 @@ void handle_row_col(tds::value_data_t& val, bool& is_null, enum tds::sql_type ty
                 if (sp.size() < sizeof(uint32_t))
                     throw formatted_error("Short ROW message ({} bytes left, expected at least 4).", sp.size());
 
-                auto len = *(uint32_t*)sp.data();
+                auto len = read_unaligned<uint32_t>(sp.data());
 
                 sp = sp.subspan(sizeof(uint32_t));
 
@@ -2372,7 +2386,7 @@ static void send_login_msg2(uint32_t tds_version, uint32_t packet_size, uint32_t
     msg.extension_offset = off;
     msg.extension_length = sizeof(uint32_t);
 
-    *(uint32_t*)((uint8_t*)&msg + msg.extension_offset) = off + sizeof(uint32_t);
+    write_unaligned<uint32_t>((uint8_t*)&msg + msg.extension_offset, off + sizeof(uint32_t));
     off += sizeof(uint32_t);
 
     for (const auto& f : features) {
@@ -2405,10 +2419,10 @@ static void handle_loginack_msg(span<const uint8_t> sp) {
 #ifdef DEBUG_SHOW_MSGS
     interf = sp[0];
 #endif
-    tds_version = *(uint32_t*)&sp[1];
+    tds_version = read_unaligned<uint32_t>(&sp[1]);
     server_name = u16string_view((char16_t*)&sp[6], server_name_len);
 #ifdef DEBUG_SHOW_MSGS
-    server_version = *(uint32_t*)&sp[6 + (server_name_len * sizeof(char16_t))];
+    server_version = read_unaligned<uint32_t>(&sp[6 + (server_name_len * sizeof(char16_t))]);
 #endif
 
 #ifdef DEBUG_SHOW_MSGS
@@ -3699,7 +3713,7 @@ namespace tds {
                             if (sp.size() < sizeof(uint16_t))
                                 throw formatted_error("Short {} message ({} bytes, expected at least 2).", token_type, sp.size());
 
-                            auto len = *(uint16_t*)&sp[0];
+                            auto len = read_unaligned<uint16_t>(&sp[0]);
 
                             sp = sp.subspan(sizeof(uint16_t));
 
@@ -3729,7 +3743,7 @@ namespace tds {
                             if (sp.size() < sizeof(uint16_t))
                                 throw formatted_error("Short {} message ({} bytes, expected at least 2).", token_type, sp.size());
 
-                            auto len = *(uint16_t*)&sp[0];
+                            auto len = read_unaligned<uint16_t>(&sp[0]);
 
                             sp = sp.subspan(sizeof(uint16_t));
 
@@ -3754,7 +3768,7 @@ namespace tds {
                                 if (feature == tds_feature::TERMINATOR)
                                     break;
 
-                                auto len = *(uint32_t*)&sp[1];
+                                auto len = read_unaligned<uint32_t>(&sp[1]);
 
                                 if (feature == tds_feature::UTF8_SUPPORT && len >= 1)
                                     has_utf8 = (uint8_t)sp[1 + sizeof(uint32_t)];
@@ -3853,7 +3867,7 @@ namespace tds {
         if (sp.size() < sizeof(uint16_t))
             throw formatted_error("Short INFO message ({} bytes left, expected at least 2).", sp.size());
 
-        auto msg_len = *(uint16_t*)sp.data();
+        auto msg_len = read_unaligned<uint16_t>(sp.data());
         sp = sp.subspan(sizeof(uint16_t));
 
         if (sp.size() < msg_len * sizeof(char16_t)) {
@@ -3895,7 +3909,7 @@ namespace tds {
         if (sp.size() < sizeof(int32_t))
             throw formatted_error("Short INFO message ({} bytes left, expected at least 4).", sp.size());
 
-        auto line_number = *(int32_t*)sp.data();
+        auto line_number = read_unaligned<int32_t>(sp.data());
 
         message_handler(utf16_to_utf8(server_name), utf16_to_utf8(msg), utf16_to_utf8(proc_name), tim->msgno, line_number,
                         tim->state, tim->severity, error);
@@ -4483,7 +4497,7 @@ WHERE columns.object_id = OBJECT_ID(?))"), fullname.empty() ? table : fullname);
                     if (sp.size() < sizeof(uint16_t))
                         throw formatted_error("Short {} message ({} bytes, expected at least 2).", token_type, sp.size());
 
-                    auto len = *(uint16_t*)&sp[0];
+                    auto len = read_unaligned<uint16_t>(&sp[0]);
 
                     sp = sp.subspan(sizeof(uint16_t));
 
@@ -4572,7 +4586,7 @@ WHERE columns.object_id = OBJECT_ID(?))"), fullname.empty() ? table : fullname);
                         if (sp.size() < sizeof(uint16_t))
                             throw formatted_error("Short {} message ({} bytes, expected at least 2).", token_type, sp.size());
 
-                        auto len = *(uint16_t*)&sp[0];
+                        auto len = read_unaligned<uint16_t>(&sp[0]);
 
                         sp = sp.subspan(sizeof(uint16_t));
 
@@ -4666,7 +4680,7 @@ WHERE columns.object_id = OBJECT_ID(?))"), fullname.empty() ? table : fullname);
                     if (sp.size() < sizeof(uint16_t))
                         throw formatted_error("Short {} message ({} bytes, expected at least 2).", token_type, sp.size());
 
-                    auto len = *(uint16_t*)&sp[0];
+                    auto len = read_unaligned<uint16_t>(&sp[0]);
 
                     sp = sp.subspan(sizeof(uint16_t));
 
