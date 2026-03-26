@@ -103,6 +103,10 @@ target_include_directories(${libname}
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
+if(WIN32)
+    add_definitions(-DNOMINMAX)
+endif()
+
 target_link_libraries(${libname} PUBLIC nlohmann_json::nlohmann_json)
 
 if(WITH_OPENSSL)
