@@ -17,6 +17,7 @@ include(CheckIncludeFileCXX)
 
 option(BUILD_SAMPLE        "Build sample program" ON)
 option(WITH_OPENSSL        "Use OpenSSL for encryption" ON)
+option(ENABLE_KRB5         "Fuck" OFF)
 
 if(NOT WIN32)
     option(ENABLE_KRB5         "Enable Kerberos support" ON)
