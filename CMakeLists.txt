@@ -15,12 +15,11 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(CheckIncludeFileCXX)
 
+include(CMakeDependentOption)
+
 option(BUILD_SAMPLE        "Build sample program" OFF)
 option(WITH_OPENSSL        "Use OpenSSL for encryption" ON)
-
-if(NOT WIN32)
-    option(ENABLE_KRB5         "Enable Kerberos support" ON)
-endif()
+cmake_dependent_option(ENABLE_KRB5 "Enable Kerberos support" ON "NOT WIN32" OFF)
 
 find_package(nlohmann_json CONFIG REQUIRED)
 asv_print_package_properties(
