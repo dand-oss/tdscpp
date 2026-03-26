@@ -15,7 +15,7 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(CheckIncludeFileCXX)
 
-option(BUILD_SAMPLE        "Build sample program" ON)
+option(BUILD_SAMPLE        "Build sample program" OFF)
 option(WITH_OPENSSL        "Use OpenSSL for encryption" ON)
 option(ENABLE_KRB5         "Fuck" OFF)
 
