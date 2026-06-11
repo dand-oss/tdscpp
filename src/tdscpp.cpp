@@ -794,7 +794,8 @@ void handle_row_col(tds::value_data_t& val, bool& is_null, enum tds::sql_type ty
             val.resize(len);
             is_null = len == 0;
 
-            memcpy(val.data(), sp.data(), len);
+            if (len > 0)
+                memcpy(val.data(), sp.data(), len);
             sp = sp.subspan(len);
 
             break;
@@ -867,7 +868,8 @@ void handle_row_col(tds::value_data_t& val, bool& is_null, enum tds::sql_type ty
                 if (sp.size() < len)
                     throw formatted_error("Short ROW message ({} bytes left, expected at least {}).", sp.size(), len);
 
-                memcpy(val.data(), sp.data(), len);
+                if (len > 0)
+                    memcpy(val.data(), sp.data(), len);
                 sp = sp.subspan(len);
             }
 
