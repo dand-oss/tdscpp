@@ -288,6 +288,200 @@ static bool parse_row_col(enum tds::sql_type type, unsigned int max_length, span
     return true;
 }
 
+static bool parse_return_type_info(enum tds::sql_type type, span<const uint8_t>& sp, unsigned int& max_length) {
+    max_length = 0;
+
+    switch (type) {
+        case tds::sql_type::SQL_NULL:
+        case tds::sql_type::TINYINT:
+        case tds::sql_type::BIT:
+        case tds::sql_type::SMALLINT:
+        case tds::sql_type::INT:
+        case tds::sql_type::DATETIM4:
+        case tds::sql_type::REAL:
+        case tds::sql_type::MONEY:
+        case tds::sql_type::DATETIME:
+        case tds::sql_type::FLOAT:
+        case tds::sql_type::SMALLMONEY:
+        case tds::sql_type::BIGINT:
+        case tds::sql_type::DATE:
+            return true;
+
+        case tds::sql_type::UNIQUEIDENTIFIER:
+        case tds::sql_type::INTN:
+        case tds::sql_type::FLTN:
+        case tds::sql_type::TIME:
+        case tds::sql_type::DATETIME2:
+        case tds::sql_type::DATETIMN:
+        case tds::sql_type::DATETIMEOFFSET:
+        case tds::sql_type::BITN:
+        case tds::sql_type::MONEYN:
+            if (sp.size() < sizeof(uint8_t)) {
+                return false;
+            }
+
+            max_length = sp[0];
+            sp = sp.subspan(sizeof(uint8_t));
+            return true;
+
+        case tds::sql_type::VARCHAR:
+        case tds::sql_type::NVARCHAR:
+        case tds::sql_type::CHAR:
+        case tds::sql_type::NCHAR:
+            if (sp.size() < sizeof(uint16_t) + sizeof(tds::collation)) {
+                return false;
+            }
+
+            max_length = read_unaligned<uint16_t>(sp.data());
+            sp = sp.subspan(sizeof(uint16_t) + sizeof(tds::collation));
+            return true;
+
+        case tds::sql_type::VARBINARY:
+        case tds::sql_type::BINARY:
+            if (sp.size() < sizeof(uint16_t)) {
+                return false;
+            }
+
+            max_length = read_unaligned<uint16_t>(sp.data());
+            sp = sp.subspan(sizeof(uint16_t));
+            return true;
+
+        case tds::sql_type::DECIMAL:
+        case tds::sql_type::NUMERIC:
+            if (sp.size() < 3) {
+                return false;
+            }
+
+            max_length = sp[0];
+            sp = sp.subspan(3);
+            return true;
+
+        case tds::sql_type::SQL_VARIANT:
+            if (sp.size() < sizeof(uint32_t)) {
+                return false;
+            }
+
+            max_length = read_unaligned<uint32_t>(sp.data());
+            sp = sp.subspan(sizeof(uint32_t));
+            return true;
+
+        case tds::sql_type::XML:
+            if (sp.size() < sizeof(uint8_t)) {
+                return false;
+            }
+
+            max_length = 0xffff;
+            sp = sp.subspan(sizeof(uint8_t));
+            return true;
+
+        case tds::sql_type::IMAGE:
+        case tds::sql_type::TEXT:
+        case tds::sql_type::NTEXT:
+        {
+            if (sp.size() < sizeof(uint32_t)) {
+                return false;
+            }
+
+            max_length = read_unaligned<uint32_t>(sp.data());
+            sp = sp.subspan(sizeof(uint32_t));
+
+            if (type == tds::sql_type::TEXT || type == tds::sql_type::NTEXT) {
+                if (sp.size() < sizeof(tds::collation)) {
+                    return false;
+                }
+
+                sp = sp.subspan(sizeof(tds::collation));
+            }
+
+            if (sp.size() < sizeof(uint8_t)) {
+                return false;
+            }
+
+            auto num_parts = sp[0];
+            sp = sp.subspan(sizeof(uint8_t));
+
+            for (uint8_t i = 0; i < num_parts; i++) {
+                if (sp.size() < sizeof(uint16_t)) {
+                    return false;
+                }
+
+                auto part_len = read_unaligned<uint16_t>(sp.data());
+                sp = sp.subspan(sizeof(uint16_t));
+
+                if (sp.size() < part_len * sizeof(char16_t)) {
+                    return false;
+                }
+
+                sp = sp.subspan(part_len * sizeof(char16_t));
+            }
+
+            return true;
+        }
+
+        case tds::sql_type::UDT:
+            return false;
+
+        default:
+            throw formatted_error("Unhandled type {} in RETURNVALUE message.", type);
+    }
+}
+
+bool parse_return_value(span<const uint8_t> sp, parsed_return_value& ret, uint64_t& varchar_left) {
+    auto start = sp;
+
+    if (sp.empty()) {
+        return false;
+    }
+
+    if ((tds::token)sp[0] != tds::token::RETURNVALUE) {
+        throw formatted_error("Expected RETURNVALUE token, found {}.", (tds::token)sp[0]);
+    }
+
+    sp = sp.subspan(1);
+
+    if (sp.size() < sizeof(uint16_t) + sizeof(uint8_t)) {
+        return false;
+    }
+
+    ret.param_ordinal = read_unaligned<uint16_t>(sp.data());
+    sp = sp.subspan(sizeof(uint16_t));
+
+    auto param_name_len = sp[0];
+    sp = sp.subspan(sizeof(uint8_t));
+
+    if (sp.size() < param_name_len * sizeof(char16_t)) {
+        return false;
+    }
+
+    sp = sp.subspan(param_name_len * sizeof(char16_t));
+
+    if (sp.size() < sizeof(uint8_t) + sizeof(uint32_t) + sizeof(uint16_t) + sizeof(tds::sql_type)) {
+        return false;
+    }
+
+    sp = sp.subspan(sizeof(uint8_t)); // status
+    sp = sp.subspan(sizeof(uint32_t)); // user type
+    sp = sp.subspan(sizeof(uint16_t)); // flags
+
+    ret.type = (tds::sql_type)sp[0];
+    sp = sp.subspan(sizeof(tds::sql_type));
+
+    if (!parse_return_type_info(ret.type, sp, ret.max_length)) {
+        return false;
+    }
+
+    auto value_start = sp;
+
+    if (!parse_row_col(ret.type, ret.max_length, sp, varchar_left)) {
+        return false;
+    }
+
+    ret.value = value_start.subspan(0, sp.data() - value_start.data());
+    ret.token_length = sp.data() - start.data();
+
+    return true;
+}
+
 enum class all_headers_state {
     absent,
     incomplete,
@@ -761,28 +955,16 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
 
             case tds::token::RETURNVALUE:
             {
-                auto h = (tds_return_value*)&sp[1];
+                parsed_return_value ret;
+                uint64_t ret_varchar_left = 0;
 
-                if (sp.size() < 1 + sizeof(tds_return_value))
+                if (!parse_return_value(sp, ret, ret_varchar_left)) {
+                    varchar_left = ret_varchar_left;
                     return sp;
+                }
 
-                // FIXME - param name
-
-                if (is_byte_len_type(h->type)) {
-                    uint8_t len;
-
-                    if (sp.size() < 1 + sizeof(tds_return_value) + 2)
-                        return sp;
-
-                    len = *(&sp[1] + sizeof(tds_return_value) + 1);
-
-                    if (sp.size() < 1 + sizeof(tds_return_value) + 2 + len)
-                        return sp;
-
-                    tokens.emplace_back(sp.data(), sp.data() + 1 + sizeof(tds_return_value) + 2 + len);
-                    sp = sp.subspan(1 + sizeof(tds_return_value) + 2 + len);
-                } else
-                    throw formatted_error("Unhandled type {} in RETURNVALUE message.", h->type);
+                tokens.emplace_back(sp.data(), sp.data() + ret.token_length);
+                sp = sp.subspan(ret.token_length);
 
                 break;
             }

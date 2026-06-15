@@ -1004,41 +1004,26 @@ namespace tds {
 
                 case token::RETURNVALUE:
                 {
-                    if (sp.size() < sizeof(tds_return_value))
-                        throw formatted_error("Short RETURNVALUE message ({} bytes, expected at least {}).", sp.size(), sizeof(tds_return_value));
+                    parsed_return_value ret;
+                    uint64_t varchar_left = 0;
+                    auto token_sp = span<const uint8_t>(t.data(), t.size());
 
-                    tds_return_value h;
-                    memcpy(&h, &sp[0], sizeof(h));
+                    if (!parse_return_value(token_sp, ret, varchar_left)) {
+                        throw formatted_error("Short RETURNVALUE message ({} bytes).", sp.size());
+                    }
 
-                    // FIXME - param name
+                    if (output_params.count(ret.param_ordinal) != 0) {
+                        value& out = *output_params.at(ret.param_ordinal);
+                        auto value_sp = ret.value;
 
-                    if (is_byte_len_type(h.type)) {
-                        uint8_t len;
+                        handle_row_col(out.val, out.is_null, ret.type, ret.max_length, value_sp);
 
-                        if (sp.size() < sizeof(tds_return_value) + 2)
-                            throw formatted_error("Short RETURNVALUE message ({} bytes, expected at least {}).", sp.size(), sizeof(tds_return_value) + 2);
-
-                        len = *((uint8_t*)&sp[0] + sizeof(tds_return_value) + 1);
-
-                        if (sp.size() < sizeof(tds_return_value) + 2 + len)
-                            throw formatted_error("Short RETURNVALUE message ({} bytes, expected {}).", sp.size(), sizeof(tds_return_value) + 2 + len);
-
-                        if (output_params.count(h.param_ordinal) != 0) {
-                            value& out = *output_params.at(h.param_ordinal);
-
-                            if (len == 0)
-                                out.is_null = true;
-                            else {
-                                out.is_null = false;
-
-                                // FIXME - make sure not unexpected size?
-
-                                out.val.resize(len);
-                                memcpy(out.val.data(), (uint8_t*)&sp[0] + sizeof(tds_return_value) + 2, len);
-                            }
+                        if (!value_sp.empty()) {
+                            throw formatted_error(
+                                "RETURNVALUE message left {} value bytes unconsumed.",
+                                value_sp.size());
                         }
-                    } else
-                        throw formatted_error("Unhandled type {} in RETURNVALUE message.", h.type);
+                    }
 
                     break;
                 }

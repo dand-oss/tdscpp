@@ -290,6 +290,14 @@ struct tds_return_value {
 
 static_assert(sizeof(tds_return_value) == 11, "tds_return_value has wrong size");
 
+struct parsed_return_value {
+    uint16_t param_ordinal;
+    tds::sql_type type;
+    unsigned int max_length;
+    std::span<const uint8_t> value;
+    size_t token_length;
+};
+
 enum class tds_tm_type : uint16_t {
     TM_GET_DTC_ADDRESS = 0,
     TM_PROPAGATE_XACT = 1,
@@ -1959,6 +1967,7 @@ struct fmt::formatter<tds::datetimeoffset> {
 // tdscpp.cpp
 std::span<const uint8_t> parse_tokens(std::span<const uint8_t> sp, std::list<std::vector<uint8_t>>& tokens,
                                       std::vector<tds::column>& buf_columns, uint64_t& varchar_left);
+bool parse_return_value(std::span<const uint8_t> sp, parsed_return_value& ret, uint64_t& varchar_left);
 void handle_row_col(tds::value_data_t& val, bool& is_null, enum tds::sql_type type,
                     unsigned int max_length, std::span<const uint8_t>& sp);
 void handle_nbcrow(std::span<const uint8_t>& sp, const std::vector<tds::column>& cols,
