@@ -288,11 +288,126 @@ static bool parse_row_col(enum tds::sql_type type, unsigned int max_length, span
     return true;
 }
 
+enum class all_headers_state {
+    absent,
+    incomplete,
+    complete
+};
+
+static bool is_known_token(uint8_t type) {
+    switch ((tds::token)type) {
+        case tds::token::OFFSET:
+        case tds::token::RETURNSTATUS:
+        case tds::token::COLMETADATA:
+        case tds::token::ALTMETADATA:
+        case tds::token::DATACLASSIFICATION:
+        case tds::token::TABNAME:
+        case tds::token::COLINFO:
+        case tds::token::ORDER:
+        case tds::token::TDS_ERROR:
+        case tds::token::INFO:
+        case tds::token::RETURNVALUE:
+        case tds::token::LOGINACK:
+        case tds::token::FEATUREEXTACK:
+        case tds::token::ROW:
+        case tds::token::NBCROW:
+        case tds::token::ALTROW:
+        case tds::token::ENVCHANGE:
+        case tds::token::SESSIONSTATE:
+        case tds::token::SSPI:
+        case tds::token::FEDAUTHINFO:
+        case tds::token::DONE:
+        case tds::token::DONEPROC:
+        case tds::token::DONEINPROC:
+            return true;
+    }
+
+    return false;
+}
+
+static all_headers_state skip_all_headers(span<const uint8_t>& sp) {
+    if (sp.size() < sizeof(uint32_t)) {
+        return all_headers_state::absent;
+    }
+
+    if (is_known_token(sp[0])) {
+        return all_headers_state::absent;
+    }
+
+    auto total_size = read_unaligned<uint32_t>(sp.data());
+
+    if (total_size < sizeof(uint32_t) + sizeof(uint32_t)) {
+        return all_headers_state::absent;
+    }
+
+    if (sp.size() >= sizeof(uint32_t) + sizeof(uint32_t)) {
+        auto header_size = read_unaligned<uint32_t>(sp.data() + sizeof(uint32_t));
+
+        if (header_size < sizeof(uint32_t) || header_size > total_size - sizeof(uint32_t)) {
+            return all_headers_state::absent;
+        }
+    }
+
+    if (total_size > sp.size()) {
+        return all_headers_state::incomplete;
+    }
+
+    auto pos = sizeof(uint32_t);
+
+    while (pos < total_size) {
+        if (total_size - pos < sizeof(uint32_t)) {
+            return all_headers_state::absent;
+        }
+
+        auto header_size = read_unaligned<uint32_t>(sp.data() + pos);
+
+        if (header_size < sizeof(uint32_t) || pos + header_size > total_size) {
+            return all_headers_state::absent;
+        }
+
+        pos += header_size;
+    }
+
+    sp = sp.subspan(total_size);
+    return all_headers_state::complete;
+}
+
+static string hex_prefix(span<const uint8_t> sp, size_t max_len) {
+    static constexpr char digits[] = "0123456789abcdef";
+
+    if (sp.size() > max_len) {
+        sp = sp.subspan(0, max_len);
+    }
+
+    string out;
+    out.reserve(sp.size() * 3);
+
+    for (auto byte : sp) {
+        if (!out.empty()) {
+            out.push_back(' ');
+        }
+
+        out.push_back(digits[(byte >> 4) & 0xf]);
+        out.push_back(digits[byte & 0xf]);
+    }
+
+    return out;
+}
+
 span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& tokens, vector<tds::column>& buf_columns,
                                  uint64_t& varchar_left) {
     varchar_left = 0;
 
     while (!sp.empty()) {
+        auto header_state = skip_all_headers(sp);
+        if (header_state == all_headers_state::incomplete) {
+            return sp;
+        }
+
+        if (header_state == all_headers_state::complete) {
+            continue;
+        }
+
         auto type = (tds::token)sp[0];
 
         switch (type) {
@@ -707,7 +822,9 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
             }
 
             default:
-                throw formatted_error("Unhandled token type {} while parsing tokens.", type);
+                throw formatted_error(
+                    "Unhandled token type {} while parsing tokens. Buffer prefix: {}",
+                    type, hex_prefix(sp, 32));
         }
     }
 
