@@ -83,6 +83,16 @@ namespace tds {
         if (finished)
             return;
 
+        // Already-drained results have nothing to cancel; a stray attention here
+        // would cancel an unrelated in-flight command (see drain_pending_response).
+        bool resp_inc = sess ? sess.value().get().response_incomplete
+                      : conn.impl->mars_sess ? conn.impl->mars_sess->response_incomplete
+                      : conn.impl->sess.response_incomplete;
+        if (!resp_inc) {
+            finished = true;
+            return;
+        }
+
         try {
             received_attn = false;
 

@@ -648,12 +648,19 @@ namespace tds {
         void send_raw(std::span<const uint8_t> msg);
 #endif
 
+        // True while a tabular result is mid-stream (last message had no EOM).
+        // The session must not send a new request until the prior response is
+        // fully read; send_msg drains it first to avoid stale packets bleeding
+        // into the next command on this (non-MARS) connection.
+        void drain_pending_response();
+
         tds_impl& tds;
         std::condition_variable mess_in_cv;
         std::mutex mess_in_lock;
         std::list<mess> mess_list;
         std::condition_variable_any rate_limit_cv;
         std::exception_ptr socket_thread_exc;
+        bool response_incomplete = false;
     };
 
     static_assert(sendable<main_session>);
@@ -790,6 +797,7 @@ namespace tds {
         void wait_for_msg(enum tds_msg& type, std::vector<uint8_t>& payload, bool* last_packet = nullptr);
         void parse_message(std::stop_token stop, std::span<const uint8_t> msg);
         void send_ack();
+        void drain_pending_response();
 
         tds_impl& tds;
         uint32_t seqnum = 1;
@@ -800,6 +808,7 @@ namespace tds {
         std::condition_variable_any rate_limit_cv;
         std::exception_ptr socket_thread_exc;
         uint32_t recv_wndw;
+        bool response_incomplete = false;
     };
 
     static_assert(sendable<smp_session>);

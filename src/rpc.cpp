@@ -586,6 +586,18 @@ namespace tds {
         if (finished)
             return;
 
+        // If this result's response has already been fully drained from the
+        // session (e.g. by a later request on this connection — see
+        // drain_pending_response), there is nothing left to cancel; sending an
+        // attention now would cancel an unrelated in-flight command.
+        bool resp_inc = sess ? sess->get().response_incomplete
+                      : conn.impl->mars_sess ? conn.impl->mars_sess->response_incomplete
+                      : conn.impl->sess.response_incomplete;
+        if (!resp_inc) {
+            finished = true;
+            return;
+        }
+
         try {
             received_attn = false;
 

@@ -3488,6 +3488,9 @@ namespace tds {
     }
 
     void smp_session::send_msg(enum tds_msg type, span<const uint8_t> msg) {
+        if (type != tds_msg::attention_signal)
+            drain_pending_response();
+
         vector<uint8_t> buf;
 
         do {
@@ -3559,8 +3562,34 @@ namespace tds {
         type = m.type;
         payload.swap(m.payload);
 
+        // Track whether the server's response is still mid-stream so the next
+        // request on this connection drains it first (see drain_pending_response).
+        sess.response_incomplete = !m.last_packet;
+
         if (last_packet)
             *last_packet = m.last_packet;
+    }
+
+    // Read and discard any in-flight response packets so a stale, partially-read
+    // result (e.g. a multi-row sp_execute the caller stopped fetching) does not
+    // bleed into the next command on this non-MARS connection.
+    template<typename T>
+    static void drain_pending_response2(T& sess) {
+        while (sess.response_incomplete) {
+            enum tds_msg type;
+            vector<uint8_t> payload;
+            bool last_packet = true;
+            wait_for_msg2(sess, type, payload, &last_packet);
+            // response_incomplete is updated inside wait_for_msg2
+        }
+    }
+
+    void main_session::drain_pending_response() {
+        drain_pending_response2(*this);
+    }
+
+    void smp_session::drain_pending_response() {
+        drain_pending_response2(*this);
     }
 
     void smp_session::wait_for_msg(enum tds_msg& type, vector<uint8_t>& payload, bool* last_packet) {
@@ -4185,6 +4214,11 @@ namespace tds {
     void main_session::send_msg(enum tds_msg type, span<const uint8_t> msg)
 #endif
     {
+        // A new request requires the prior response to be fully consumed first
+        // (attention_signal is the cancel path and must not recurse).
+        if (type != tds_msg::attention_signal)
+            drain_pending_response();
+
         do {
             size_t to_send = min(msg.size(), tds.packet_size - sizeof(tds_header));
 
