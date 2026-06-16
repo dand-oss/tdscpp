@@ -35,28 +35,6 @@ static inline void write_unaligned(void* ptr, T val) {
 using namespace std;
 
 namespace tds {
-    static string rpc_hex_prefix(span<const uint8_t> sp, size_t max_len) {
-        static constexpr char digits[] = "0123456789abcdef";
-
-        if (sp.size() > max_len) {
-            sp = sp.subspan(0, max_len);
-        }
-
-        string out;
-        out.reserve(sp.size() * 3);
-
-        for (auto byte : sp) {
-            if (!out.empty()) {
-                out.push_back(' ');
-            }
-
-            out.push_back(digits[(byte >> 4) & 0xf]);
-            out.push_back(digits[byte & 0xf]);
-        }
-
-        return out;
-    }
-
     void rpc::do_rpc(u16string_view rpc_name) {
         size_t bufsize;
 
@@ -710,7 +688,7 @@ namespace tds {
                         static_cast<int>(type),
                         last_packet ? 1 : 0,
                         payload.size(),
-                        rpc_hex_prefix(payload, 64));
+                        hex_prefix(payload, 64));
                 }
 
                 if (sp.size() != buf.size()) {

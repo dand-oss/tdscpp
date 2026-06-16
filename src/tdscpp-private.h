@@ -1980,6 +1980,7 @@ struct fmt::formatter<tds::datetimeoffset> {
 #endif
 
 // tdscpp.cpp
+std::string hex_prefix(std::span<const uint8_t> sp, size_t max_len);
 std::span<const uint8_t> parse_tokens(std::span<const uint8_t> sp, std::list<std::vector<uint8_t>>& tokens,
                                       std::vector<tds::column>& buf_columns, uint64_t& varchar_left);
 bool parse_return_value(std::span<const uint8_t> sp, parsed_return_value& ret, uint64_t& varchar_left);

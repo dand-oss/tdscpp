@@ -570,7 +570,7 @@ static all_headers_state skip_all_headers(span<const uint8_t>& sp) {
     return all_headers_state::complete;
 }
 
-static string hex_prefix(span<const uint8_t> sp, size_t max_len) {
+string hex_prefix(span<const uint8_t> sp, size_t max_len) {
     static constexpr char digits[] = "0123456789abcdef";
 
     if (sp.size() > max_len) {
