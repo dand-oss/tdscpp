@@ -1005,8 +1005,8 @@ span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& 
 
             default:
                 throw formatted_error(
-                    "Unhandled token type {} while parsing tokens. Buffer prefix: {}",
-                    type, hex_prefix(sp, 32));
+                    "Unhandled token type {} while parsing tokens. Buffer size: {}, prefix: {}",
+                    type, sp.size(), hex_prefix(sp, 64));
         }
     }
 
@@ -3971,8 +3971,9 @@ namespace tds {
                 sess.wait_for_msg(type, payload, &last_packet);
                 // FIXME - timeout
 
-                if (type != tds_msg::tabular_result)
+                if (type != tds_msg::tabular_result) {
                     throw formatted_error("Received message type {}, expected tabular_result", (int)type);
+                }
 
                 buf.insert(buf.end(), payload.begin(), payload.end());
 

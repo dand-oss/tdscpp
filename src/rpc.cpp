@@ -35,6 +35,28 @@ static inline void write_unaligned(void* ptr, T val) {
 using namespace std;
 
 namespace tds {
+    static string rpc_hex_prefix(span<const uint8_t> sp, size_t max_len) {
+        static constexpr char digits[] = "0123456789abcdef";
+
+        if (sp.size() > max_len) {
+            sp = sp.subspan(0, max_len);
+        }
+
+        string out;
+        out.reserve(sp.size() * 3);
+
+        for (auto byte : sp) {
+            if (!out.empty()) {
+                out.push_back(' ');
+            }
+
+            out.push_back(digits[(byte >> 4) & 0xf]);
+            out.push_back(digits[byte & 0xf]);
+        }
+
+        return out;
+    }
+
     void rpc::do_rpc(u16string_view rpc_name) {
         size_t bufsize;
 
@@ -659,7 +681,19 @@ namespace tds {
             }
 
             {
-                auto sp = parse_tokens(buf, tokens, buf_columns, varchar_left);
+                span<const uint8_t> sp;
+                try {
+                    sp = parse_tokens(buf, tokens, buf_columns, varchar_left);
+                } catch (const std::exception& e) {
+                    throw formatted_error(
+                        "{}; RPC {}, packet type {}, last {}, payload size {}, payload prefix {}",
+                        e.what(),
+                        utf16_to_utf8(name),
+                        static_cast<int>(type),
+                        last_packet ? 1 : 0,
+                        payload.size(),
+                        rpc_hex_prefix(payload, 64));
+                }
 
                 if (sp.size() != buf.size()) {
                     vector<uint8_t> newbuf{sp.begin(), sp.end()};
