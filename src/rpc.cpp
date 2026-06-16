@@ -672,6 +672,9 @@ namespace tds {
             if (type != tds_msg::tabular_result)
                 throw formatted_error("Received message type {}, expected tabular_result", (int)type);
 
+            capture_tds_payload("ok", "rpc", payload, last_packet, "",
+                                fmtns::format("RPC {}", utf16_to_utf8(name)));
+
             buf.insert(buf.end(), payload.begin(), payload.end());
 
             // don't go through existing data if still in the middle of a VARCHAR(MAX)
@@ -685,6 +688,9 @@ namespace tds {
                 try {
                     sp = parse_tokens(buf, tokens, buf_columns, varchar_left);
                 } catch (const std::exception& e) {
+                    capture_tds_payload("fail", "rpc", buf, last_packet, e.what(),
+                                        fmtns::format("RPC {}, packet type {}", utf16_to_utf8(name),
+                                                    static_cast<int>(type)));
                     throw formatted_error(
                         "{}; RPC {}, packet type {}, last {}, payload size {}, payload prefix {}",
                         e.what(),
@@ -701,8 +707,11 @@ namespace tds {
                 }
             }
 
-            if (last_packet && !buf.empty())
+            if (last_packet && !buf.empty()) {
+                capture_tds_payload("leftover", "rpc", buf, last_packet, "Data remaining in buffer",
+                                    fmtns::format("RPC {}", utf16_to_utf8(name)));
                 throw formatted_error("Data remaining in buffer");
+            }
         } while (false);
 
         vector<uint8_t> t;

@@ -624,6 +624,12 @@ namespace tds {
 
     class tds_impl;
 
+    // Env-gated raw TDS result-payload capture (see definition in tdscpp.cpp). Used by the
+    // result-reading callers (rpc/batch/...) to freeze real payloads as parser fixtures.
+    void capture_tds_payload(const std::string& reason, const std::string& caller,
+                             std::span<const uint8_t> buf, bool last_packet,
+                             const std::string& error_text, const std::string& context);
+
     template<typename T>
     concept sendable = requires(T t) {
         { t.send_msg((enum tds_msg)0, std::span<const uint8_t>()) };

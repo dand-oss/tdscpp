@@ -42,6 +42,10 @@ static inline void write_unaligned(void* ptr, T val) {
 #include <list>
 #include <map>
 #include <charconv>
+#include <fstream>
+#include <filesystem>
+#include <atomic>
+#include <cstdlib>
 #include <sys/types.h>
 #include <nlohmann/json.hpp>
 
@@ -586,6 +590,57 @@ static string hex_prefix(span<const uint8_t> sp, size_t max_len) {
     }
 
     return out;
+}
+
+namespace tds {
+
+// Env-gated capture of raw TDS result payloads, used to build parser regression fixtures
+// from real SQL Server traffic. Controlled entirely by environment so production builds
+// pay nothing beyond a getenv() on the (rare) capture path:
+//   TDSCPP_CAPTURE_DIR=<dir>  write <dir>/<reason>-<n>.bin (raw bytes) + a .json sidecar.
+//   TDSCPP_CAPTURE_ALL=1      also capture successful payloads (reason "ok"); otherwise only
+//                             failures (reason "fail"/"leftover") are written.
+// No-op when TDSCPP_CAPTURE_DIR is unset.
+void capture_tds_payload(const string& reason, const string& caller, span<const uint8_t> buf,
+                         bool last_packet, const string& error_text, const string& context) {
+    const char* dir = getenv("TDSCPP_CAPTURE_DIR");
+    if (!dir || !*dir)
+        return;
+
+    // Successful payloads are noisy; capture them only when explicitly requested.
+    if (reason == "ok" && !getenv("TDSCPP_CAPTURE_ALL"))
+        return;
+
+    static atomic<unsigned> counter{0};
+    auto n = counter.fetch_add(1);
+
+    error_code ec;
+    filesystem::create_directories(dir, ec);
+
+    auto stem = filesystem::path(dir) / fmtns::format("{}-{:04}", reason, n);
+
+    {
+        ofstream bin(stem.string() + ".bin", ios::binary | ios::trunc);
+        if (bin)
+            bin.write(reinterpret_cast<const char*>(buf.data()), (streamsize)buf.size());
+    }
+
+    nlohmann::json meta;
+    meta["reason"] = reason;
+    meta["caller"] = caller;
+    meta["payload_size"] = buf.size();
+    meta["last_packet"] = last_packet;
+    meta["error"] = error_text;
+    meta["context"] = context;
+    meta["hex_prefix"] = hex_prefix(buf, 64);
+
+    {
+        ofstream js(stem.string() + ".json", ios::trunc);
+        if (js)
+            js << meta.dump(2) << '\n';
+    }
+}
+
 }
 
 span<const uint8_t> parse_tokens(span<const uint8_t> sp, list<vector<uint8_t>>& tokens, vector<tds::column>& buf_columns,

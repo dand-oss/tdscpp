@@ -169,6 +169,8 @@ namespace tds {
             if (type != tds_msg::tabular_result)
                 throw formatted_error("Received message type {}, expected tabular_result", (int)type);
 
+            capture_tds_payload("ok", "batch", payload, last_packet, "", "");
+
             buf.insert(buf.end(), payload.begin(), payload.end());
 
             // don't go through existing data if still in the middle of a VARCHAR(MAX)
@@ -178,7 +180,13 @@ namespace tds {
             }
 
             {
-                auto sp = parse_tokens(buf, tokens, buf_columns, varchar_left);
+                span<const uint8_t> sp;
+                try {
+                    sp = parse_tokens(buf, tokens, buf_columns, varchar_left);
+                } catch (const std::exception& e) {
+                    capture_tds_payload("fail", "batch", buf, last_packet, e.what(), "");
+                    throw;
+                }
 
                 if (sp.size() != buf.size()) {
                     vector<uint8_t> newbuf{sp.begin(), sp.end()};
@@ -186,8 +194,10 @@ namespace tds {
                 }
             }
 
-            if (last_packet && !buf.empty())
+            if (last_packet && !buf.empty()) {
+                capture_tds_payload("leftover", "batch", buf, last_packet, "Data remaining in buffer", "");
                 throw formatted_error("Data remaining in buffer");
+            }
         } while (false);
 
         vector<uint8_t> t;
